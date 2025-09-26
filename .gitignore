@@ -1,3 +1,13 @@
+.vscode
+
+*.o
+*.bin
+.pio/build
+
+test/
+ui-design/
+.idea/
+
 # Prerequisites
 *.d
 
