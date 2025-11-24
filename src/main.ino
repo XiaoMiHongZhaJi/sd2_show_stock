@@ -17,6 +17,9 @@ const char *url = "/getChartInfo";
 const int brightness = 30; // 1-100
 // 刷新间隔（毫秒）
 const int refresh_time = 20000;
+// 按钮
+const int BUTTON_PIN = 4;
+bool lastButtonState = HIGH;
 
 // LVGL字体声明
 LV_FONT_DECLARE(tencent_w7_22)
@@ -44,6 +47,7 @@ static lv_obj_t *bottom_label_2;
 static lv_obj_t *bottom_label_3;
 static lv_obj_t *chart;
 static lv_obj_t *abscissa_hline = NULL; // 用于表示横线的对象，方便管理
+static lv_task_t *t; // 自动刷新任务
 
 static lv_chart_series_t *chart_series;
 
@@ -448,7 +452,8 @@ void setup()
 {
     Serial.begin(921600); // 提高波特率
     // srand((unsigned)time(NULL)); // ESP8266的time(NULL)可能需要ntp同步，或者用randomSeed(analogRead(A0))
-
+    
+    pinMode(BUTTON_PIN, INPUT_PULLUP);   // 使用内部上拉
     lv_init();
 
     tft.begin();
@@ -550,10 +555,24 @@ void setup()
 
     task_cb(NULL);
 
-    lv_task_t *t = lv_task_create(task_cb, refresh_time, LV_TASK_PRIO_MID, 0);
+    t = lv_task_create(task_cb, refresh_time, LV_TASK_PRIO_MID, 0);
+}
+
+void button_handler()
+{
+    bool currentState = digitalRead(BUTTON_PIN);
+    // 检测按键状态变化（下降沿）
+    if (lastButtonState == HIGH && currentState == LOW) {
+        Serial.println("Button pressed!");
+        lv_task_reset(t); // 清空倒计时
+        task_cb(NULL);    // 立刻执行刷新
+        delay(100);       // 防抖
+    }
+    lastButtonState = currentState;
 }
 
 void loop()
 {
     lv_task_handler();
+    button_handler();
 }
