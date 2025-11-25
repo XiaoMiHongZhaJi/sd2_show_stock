@@ -3,6 +3,7 @@
 #include <string>
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
+#include <Adafruit_NeoPixel.h>
 
 using namespace std;
 
@@ -10,7 +11,7 @@ using namespace std;
 const char *ssid = "MYWIFI";
 const char *password = "12222222";
 // 服务器配置
-const char *host = "192.168.137.1";
+const char *host = "sh.cyf.mom";
 const int httpPort = 5000;
 const char *url = "/getChartInfo";
 // 屏幕亮度
@@ -20,6 +21,9 @@ const int refresh_time = 20000;
 // 按钮
 const int BUTTON_PIN = 4;
 bool lastButtonState = HIGH;
+// 氛围灯
+#define LED_PIN    12   // GPIO12
+Adafruit_NeoPixel strip(1, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // LVGL字体声明
 LV_FONT_DECLARE(tencent_w7_22)
@@ -369,14 +373,17 @@ static void task_cb(lv_task_t *task) {
         chart_series->color = LV_COLOR_GREEN;
         lv_obj_set_style_local_text_color(top_icon_2, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_GREEN);
         lv_label_set_text(top_icon_2, CUSTOM_SYMBOL_DOWNLOAD);
+        setRandomColor(1);
     } else if (res_data.top_icon_2_val == 2) {
         chart_series->color = LV_COLOR_RED;
         lv_obj_set_style_local_text_color(top_icon_2, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_RED);
         lv_label_set_text(top_icon_2, CUSTOM_SYMBOL_UPLOAD);
+        setRandomColor(2);
     } else { // 默认或其他情况
         chart_series->color = LV_COLOR_BLACK; // 默认黑色
         lv_obj_set_style_local_text_color(top_icon_2, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
         lv_label_set_text(top_icon_2, CUSTOM_SYMBOL_UPLOAD); // 默认一个图标
+        setRandomColor(0);
     }
 
     // 处理图表范围和横线
@@ -448,14 +455,28 @@ static void task_cb(lv_task_t *task) {
     Serial.printf("Free Heap Memory: %u bytes\n", ESP.getFreeHeap());
 }
 
+void setRandomColor(int theme) {
+    // 1:绿 2:红
+    uint8_t r = random(0, 256);
+    uint8_t g = random(0, 256);
+    uint8_t b = random(0, 256);
+    if(theme == 1){
+        g = 255;
+    } else if (theme == 2) {
+        r = 255;
+    }
+    strip.setPixelColor(0, strip.Color(r, g, b));
+    strip.show();
+}
+
 void setup()
 {
     Serial.begin(921600); // 提高波特率
     // srand((unsigned)time(NULL)); // ESP8266的time(NULL)可能需要ntp同步，或者用randomSeed(analogRead(A0))
     
     pinMode(BUTTON_PIN, INPUT_PULLUP);   // 使用内部上拉
-    lv_init();
 
+    lv_init();
     tft.begin();
     tft.setRotation(0);
 
@@ -556,6 +577,11 @@ void setup()
     task_cb(NULL);
 
     t = lv_task_create(task_cb, refresh_time, LV_TASK_PRIO_MID, 0);
+
+    strip.begin();
+    strip.setBrightness(255);
+    strip.show();
+    randomSeed(analogRead(A0));
 }
 
 void button_handler()
