@@ -11,7 +11,7 @@ using namespace std;
 const char *ssid = "MYWIFI";
 const char *password = "12222222";
 // 服务器配置
-const char *host = "sh.cyf.mom";
+const char *host = "192.168.137.1";
 const int httpPort = 5000;
 const char *url = "/getChartInfo";
 // 屏幕亮度
