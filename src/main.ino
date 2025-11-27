@@ -11,7 +11,7 @@ using namespace std;
 const char *ssid = "MYWIFI";
 const char *password = "12222222";
 // 服务器配置
-const char *host = "192.168.137.1";
+const char *host = "192.168.10.225";
 const int httpPort = 5000;
 const char *url = "/getChartInfo";
 // 屏幕亮度
@@ -26,7 +26,7 @@ bool lastButtonState = HIGH;
 Adafruit_NeoPixel strip(1, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // LVGL字体声明
-LV_FONT_DECLARE(tencent_w7_22)
+LV_FONT_DECLARE(lv_font_hanyiqihei_16)
 LV_FONT_DECLARE(iconfont_symbol)
 
 // TFT和LVGL显示缓冲区
@@ -84,7 +84,7 @@ void initStyles()
 
     // Font 22 Style
     lv_style_init(&font_22_style);
-    lv_style_set_text_font(&font_22_style, LV_STATE_DEFAULT, &tencent_w7_22);
+    lv_style_set_text_font(&font_22_style, LV_STATE_DEFAULT, &lv_font_hanyiqihei_16);
     lv_style_set_text_color(&font_22_style, LV_STATE_DEFAULT, LV_COLOR_WHITE); // 示例默认白色
 
     // Horizontal Line Style for chart
@@ -471,7 +471,7 @@ void setRandomColor(int theme) {
 
 void setup()
 {
-    Serial.begin(921600); // 提高波特率
+    Serial.begin(500000); // 提高波特率
     // srand((unsigned)time(NULL)); // ESP8266的time(NULL)可能需要ntp同步，或者用randomSeed(analogRead(A0))
     
     pinMode(BUTTON_PIN, INPUT_PULLUP);   // 使用内部上拉
@@ -533,30 +533,37 @@ void setup()
 
     // 图中
     chart_label_top_left = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(chart_label_top_left, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
     lv_obj_set_style_local_text_color(chart_label_top_left, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
     lv_obj_set_pos(chart_label_top_left, 15, 40);
 
     chart_label_top_right = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(chart_label_top_right, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
     lv_obj_set_style_local_text_color(chart_label_top_right, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
     lv_obj_set_pos(chart_label_top_right, 180, 40);
 
     chart_label_bottom_left = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(chart_label_bottom_left, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
     lv_obj_set_style_local_text_color(chart_label_bottom_left, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
     lv_obj_set_pos(chart_label_bottom_left, 15, 190);
 
     chart_label_bottom_right = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(chart_label_bottom_right, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
     lv_obj_set_style_local_text_color(chart_label_bottom_right, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
-    lv_obj_set_pos(chart_label_bottom_right, 180, 190);
+    lv_obj_set_pos(chart_label_bottom_right, 170, 190);
 
     // 底部
     bottom_label_1 = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(bottom_label_1, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
     lv_obj_set_pos(bottom_label_1, 10, 220);
 
     bottom_label_2 = lv_label_create(monitor_page, NULL);
-    lv_obj_set_pos(bottom_label_2, 130, 220);
+    lv_obj_add_style(bottom_label_2, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
+    lv_obj_set_pos(bottom_label_2, 140, 220);
 
     bottom_label_3 = lv_label_create(monitor_page, NULL);
-    lv_obj_set_pos(bottom_label_3, 180, 220);
+    lv_obj_add_style(bottom_label_3, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
+    lv_obj_set_pos(bottom_label_3, 190, 220);
 
     // 绘制曲线图
     chart = lv_chart_create(monitor_page, NULL);
