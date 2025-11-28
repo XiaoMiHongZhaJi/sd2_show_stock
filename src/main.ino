@@ -27,7 +27,7 @@ bool lastButtonState = HIGH;
 Adafruit_NeoPixel strip(1, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // LVGL字体声明
-LV_FONT_DECLARE(lv_font_hanyiqihei_16)
+LV_FONT_DECLARE(lv_font_zhixin_18)
 LV_FONT_DECLARE(iconfont_symbol)
 
 // TFT和LVGL显示缓冲区
@@ -85,7 +85,7 @@ void initStyles()
 
     // Font 22 Style
     lv_style_init(&font_22_style);
-    lv_style_set_text_font(&font_22_style, LV_STATE_DEFAULT, &lv_font_hanyiqihei_16);
+    lv_style_set_text_font(&font_22_style, LV_STATE_DEFAULT, &lv_font_zhixin_18);
     lv_style_set_text_color(&font_22_style, LV_STATE_DEFAULT, LV_COLOR_WHITE); // 示例默认白色
 
     // Horizontal Line Style for chart
@@ -336,6 +336,11 @@ static void task_cb(lv_task_t *task) {
             }
             return;
         }
+    }
+    // WiFi连接成功后切换页面
+    if (login_page && monitor_page) {
+        lv_obj_set_hidden(login_page, true);
+        lv_obj_set_hidden(monitor_page, false);
     }
 
     ChartData res_data;
