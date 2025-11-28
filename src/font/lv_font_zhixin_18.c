@@ -1,4 +1,5 @@
 /*******************************************************************************
+ * https://lvgl.io/tools/fontconverter
  * Size: 18 px
  * Bpp: 2
  * Opts: --bpp 2 --size 18 --lcd --stride 1 --align 1 --font 知新体.ttf --symbols 不马枪的子小米轰炸姬新增了一个粉丝数点赞收藏评论投硬币私信九洲药业海康威视洽洽食品 --range 32-127 --format lvgl -o lv_font_zhixin_18.c

@@ -4,6 +4,7 @@
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
+#include <Ticker.h>
 
 using namespace std;
 
@@ -40,6 +41,7 @@ static lv_obj_t *login_page = NULL;
 static lv_obj_t *monitor_page = NULL;
 
 // LVGL UI元素
+static lv_obj_t *login_page_label;
 static lv_obj_t *top_label_1;
 static lv_obj_t *top_icon_2;
 static lv_obj_t *top_label_2;
@@ -58,12 +60,18 @@ static lv_chart_series_t *chart_series;
 
 // LVGL样式（提前初始化并重用以节省内存和提高效率）
 static lv_style_t iconfont_style;
-static lv_style_t font_22_style;
+static lv_style_t font_style;
 static lv_style_t hline_style;
 
+// 定时器
+Ticker myTimer;
+volatile bool needToRunTask = false;
+void timerCallback() {
+    needToRunTask = true;
+}
+
 // 设置屏幕亮度
-void setBrightness(int value)
-{
+void setBrightness(int value) {
     // 增加输入值校验
     if (value < 1) value = 1;
     if (value > 100) value = 100; // 假设PWM范围是0-255
@@ -74,9 +82,27 @@ void setBrightness(int value)
     analogWrite(TFT_BL, 1023 - (value * 10));
 }
 
+lv_obj_t *lv_obj_default(uint8 x, uint8 y, const char *text) {
+    lv_obj_t *label = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(label, LV_LABEL_PART_MAIN, &font_style); // 使用预定义样式
+    lv_label_set_text(label, text); // 初始值
+    lv_obj_set_pos(label, x, y);
+    return label;
+}
+
 // 样式初始化函数，只运行一次
-void initStyles()
-{
+void initStyles() {
+    lv_init();
+    lv_disp_buf_init(&disp_buf, buf, NULL, LV_HOR_RES_MAX * 10); // 初始化显示缓冲区
+
+    lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.hor_res = LV_HOR_RES_MAX; // 使用宏
+    disp_drv.ver_res = LV_VER_RES_MAX; // 使用宏
+    disp_drv.flush_cb = my_disp_flush;
+    disp_drv.buffer = &disp_buf;
+    lv_disp_drv_register(&disp_drv);
+
     // Icon Font Style
     lv_style_init(&iconfont_style);
     lv_style_set_text_font(&iconfont_style, LV_STATE_DEFAULT, &iconfont_symbol);
@@ -84,9 +110,9 @@ void initStyles()
     lv_style_set_text_color(&iconfont_style, LV_STATE_DEFAULT, LV_COLOR_WHITE); // 示例默认白色
 
     // Font 22 Style
-    lv_style_init(&font_22_style);
-    lv_style_set_text_font(&font_22_style, LV_STATE_DEFAULT, &lv_font_zhixin_18);
-    lv_style_set_text_color(&font_22_style, LV_STATE_DEFAULT, LV_COLOR_WHITE); // 示例默认白色
+    lv_style_init(&font_style);
+    lv_style_set_text_font(&font_style, LV_STATE_DEFAULT, &lv_font_zhixin_18);
+    lv_style_set_text_color(&font_style, LV_STATE_DEFAULT, LV_COLOR_WHITE); // 示例默认白色
 
     // Horizontal Line Style for chart
     lv_style_init(&hline_style);
@@ -98,8 +124,7 @@ void initStyles()
 }
 
 // 页面初始化
-void setupPages()
-{
+void setupPages() {
     // 登录页面
     if (login_page == NULL) { // 避免重复创建
         login_page = lv_cont_create(lv_scr_act(), NULL);
@@ -111,9 +136,11 @@ void setupPages()
         // 创建Spinner并应用样式
         lv_obj_t *preload = lv_spinner_create(login_page, NULL);
         lv_obj_set_size(preload, 100, 100);
-        lv_obj_align(preload, NULL, LV_ALIGN_CENTER, 0, 0);
-    }
+        lv_obj_align(preload, NULL, LV_ALIGN_CENTER, 0, -20);
 
+        login_page_label = lv_label_create(login_page, NULL);
+        lv_obj_add_style(login_page_label, LV_LABEL_PART_MAIN, &font_style); // 使用预定义样式
+    }
     // 监控页面
     if (monitor_page == NULL) { // 避免重复创建
         monitor_page = lv_cont_create(lv_scr_act(), NULL);
@@ -122,44 +149,88 @@ void setupPages()
         lv_obj_set_style_local_bg_opa(monitor_page, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_OPA_TRANSP);
     }
 
-    lv_obj_set_hidden(login_page, false);
-    lv_obj_set_hidden(monitor_page, true);
+    // 构建monitor_page的UI元素
+    // 背景
+    lv_obj_t *bg = lv_obj_create(monitor_page, NULL);
+    lv_obj_clean_style_list(bg, LV_OBJ_PART_MAIN);
+    lv_obj_set_style_local_bg_opa(bg, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_OPA_100);
+    lv_color_t bg_color = lv_color_hex(0x7381a2); // 保持原有颜色
+    lv_obj_set_style_local_bg_color(bg, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, bg_color);
+    lv_obj_set_size(bg, LV_HOR_RES_MAX, LV_VER_RES_MAX);
+    lv_obj_set_pos(bg, 0, 0); // 确保从(0,0)开始
+
+    lv_obj_t *cont = lv_cont_create(monitor_page, NULL);
+    lv_obj_set_auto_realign(cont, true);
+    lv_color_t cont_color = lv_color_hex(0x081418);
+    lv_obj_set_width(cont, 230);
+    lv_obj_set_height(cont, 210);
+    lv_obj_set_pos(cont, 5, 5);
+    lv_cont_set_fit(cont, LV_FIT_TIGHT);
+    lv_cont_set_layout(cont, LV_LAYOUT_COLUMN_MID);
+    lv_obj_set_style_local_border_color(cont, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, cont_color);
+    lv_obj_set_style_local_bg_color(cont, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, cont_color);
+
+    // 顶部标签
+    top_label_1 = lv_obj_default(15, 12, "...");
+    top_label_2 = lv_obj_default(142, 12, "...");
+
+    top_icon_2 = lv_label_create(monitor_page, NULL);
+    lv_obj_add_style(top_icon_2, LV_LABEL_PART_MAIN, &iconfont_style); // 使用预定义样式
+    lv_label_set_text(top_icon_2, CUSTOM_SYMBOL_UPLOAD); // 默认图标
+    lv_obj_set_pos(top_icon_2, 120, 15);
+
+    // 图中
+    chart_label_top_left = lv_obj_default(15, 40, "");
+    chart_label_top_right = lv_obj_default(180, 40, "");
+    chart_label_bottom_left = lv_obj_default(15, 190, "");
+    chart_label_bottom_right = lv_obj_default(170, 190, "");
+
+    lv_obj_set_style_local_text_color(chart_label_top_left, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+    lv_obj_set_style_local_text_color(chart_label_top_right, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+    lv_obj_set_style_local_text_color(chart_label_bottom_left, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+    lv_obj_set_style_local_text_color(chart_label_bottom_right, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+
+    // 底部
+    bottom_label_1 = lv_obj_default(10, 220, "");
+    bottom_label_2 = lv_obj_default(140, 220, "");
+    bottom_label_3 = lv_obj_default(190, 220, "");
+
+    // 绘制曲线图
+    chart = lv_chart_create(monitor_page, NULL);
+    lv_obj_set_size(chart, 220, 175);
+    lv_obj_align(chart, NULL, LV_ALIGN_CENTER, 0, 2);
+    lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_update_mode(chart, LV_CHART_UPDATE_MODE_SHIFT);
+
+    lv_obj_set_style_local_bg_opa(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, LV_OPA_50);
+    lv_obj_set_style_local_bg_grad_dir(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, LV_GRAD_DIR_VER);
+    lv_obj_set_style_local_bg_main_stop(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, 255);
+    lv_obj_set_style_local_bg_grad_stop(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, 0);
+
+    chart_series = lv_chart_add_series(chart, LV_COLOR_RED);
+
+    lv_chart_refresh(chart);
 }
 
 
 // 连接WiFi
 void connectWiFi() {
-    // 如果已经连接，则直接返回
-    if (WiFi.status() == WL_CONNECTED) {
-        // WiFi连接成功后切换页面
-        if (login_page && monitor_page) {
-            lv_obj_set_hidden(login_page, true);
-            lv_obj_set_hidden(monitor_page, false);
-        }
-        return;
+    lv_obj_set_hidden(login_page, false);
+    lv_obj_set_hidden(monitor_page, true);
+
+    Serial.printf("Connecting to %s ...", ssid);
+    if (login_page_label) {
+        lv_label_set_text_fmt(login_page_label, "Connecting to %s ...", ssid);
+        lv_obj_align(login_page_label, NULL, LV_ALIGN_CENTER, 0, 70);
     }
 
-    String info = "Connecting to " + String(ssid) + "...";
-    Serial.print(info);
-    if (bottom_label_1) {
-        lv_label_set_text(bottom_label_1, info.c_str());
-        lv_label_set_text(bottom_label_2, "");
-        lv_label_set_text(bottom_label_3, "");
-    }
-
-    WiFi.mode(WIFI_STA); // 明确设置为Station模式
+    WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
 
-    unsigned long connectStartTime = millis();
-    const unsigned long connectionTimeout = 15000; // 15秒连接超时
+    myTimer.once(10, timerCallback);
+}
 
-    int i = 0; // 这一段程序语句用于检查WiFi是否连接成功
-    while (WiFi.status() != WL_CONNECTED && (millis() - connectStartTime < connectionTimeout)) {
-        delay(1000);
-        Serial.print(i++);
-        Serial.print(' '); // 此处通过While循环让NodeMCU每隔一秒钟检查一次WiFi.status()函数返回值
-    }
-
+boolean checkWiFiStatus() {
     if (WiFi.status() == WL_CONNECTED) {
         Serial.println("\nConnection established!");
         Serial.print("IP address:    ");
@@ -173,14 +244,18 @@ void connectWiFi() {
         if (bottom_label_1) {
             lv_label_set_text(bottom_label_1, WiFi.localIP().toString().c_str());
         }
-    } else {
-        Serial.println("\nWiFi connection failed! Restarting...");
+        lv_task_reset(t); // 清空倒计时
+        task_cb(NULL);
+        return true;
     }
+    Serial.println("\nWiFi connection failed! Reconnecting...");
+    lv_task_reset(t); // 清空倒计时
+    connectWiFi();
+    return false;
 }
 
 /* Display flushing */
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
-{
+void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     // 增加区域有效性检查
     if (!area || !color_p || area->x1 > area->x2 || area->y1 > area->y2) {
         lv_disp_flush_ready(disp);
@@ -217,25 +292,12 @@ struct ChartData {
     int top_icon_2_val = 0;
     int chart_point_length = 0;
     vector<lv_coord_t> chart_points; // 使用vector动态存储点
-
-    bool isValid = false; // 标记数据是否成功解析
 };
 
 bool getChartInfo(ChartData &data);
 // 获取图表信息
 bool getChartInfo(ChartData &data) {
     WiFiClient client;
-    data.isValid = false; // 默认无效
-
-    // 检查WiFi连接状态
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi not connected, cannot fetch chart info.");
-        return false;
-    }
-
-    String req = "GET " + String(url) + "?index=" + String(stockIndex ++) + " HTTP/1.1\r\n" +
-                 "Host: " + String(host) + "\r\n" +
-                 "Connection: close\r\n\r\n";
 
     // 使用非阻塞连接，并设置超时
     if (!client.connect(host, httpPort)) {
@@ -243,18 +305,22 @@ bool getChartInfo(ChartData &data) {
         return false;
     }
 
-    client.print(req);
+    client.print("GET ");
+    client.print(url);
+    client.print("?index=");
+    client.print(stockIndex++);
+    client.print(" HTTP/1.1\r\nHost: ");
+    client.print(host);
+    client.print("\r\nConnection: close\r\n\r\n");
 
     // 等待响应头，设置读取超时
-    String status_response = client.readStringUntil('\n');
-    Serial.println(status_response);
+    Serial.println(client.readStringUntil('\n'));
 
     if (!client.find("\r\n\r\n")) {
         Serial.println("Header End not found. Invalid response.");
         client.stop();
         return false;
     }
-    Serial.println("Found Header End. Start Parsing.");
 
     // 使用ArduinoJson解析
     const size_t capacity = JSON_ARRAY_SIZE(50) + JSON_OBJECT_SIZE(15) + 1000; // 预估JSON大小
@@ -278,7 +344,7 @@ bool getChartInfo(ChartData &data) {
     if (chart_info.isNull()) {
         Serial.println("Error: 'chart_info' is missing or invalid in JSON response.");
         client.stop();
-        return data.isValid;
+        return false;
     }
     // 提取并校验每个字段
     data.top_label_1_str = chart_info["top_label_1"].as<String>();
@@ -315,10 +381,8 @@ bool getChartInfo(ChartData &data) {
             data.chart_points.push_back(LV_CHART_POINT_DEF); // 填充默认值
         }
     }
-    data.isValid = true;
-
     client.stop();
-    return data.isValid;
+    return true;
 }
 
 // task循环执行的函数
@@ -491,113 +555,7 @@ void setRandomColor(int theme) {
     strip.show();
 }
 
-lv_obj_t *lv_obj_default(uint8 x, uint8 y, const char *text) {
-    lv_obj_t *label = lv_label_create(monitor_page, NULL);
-    lv_obj_add_style(label, LV_LABEL_PART_MAIN, &font_22_style); // 使用预定义样式
-    lv_label_set_text(label, text); // 初始值
-    lv_obj_set_pos(label, x, y);
-    return label;
-}
-
-void setup() {
-    Serial.begin(500000); // 提高波特率
-    // srand((unsigned)time(NULL)); // ESP8266的time(NULL)可能需要ntp同步，或者用randomSeed(analogRead(A0))
-    
-    pinMode(BUTTON_PIN, INPUT_PULLUP);   // 使用内部上拉
-
-    tft.begin();
-    tft.setRotation(0);
-    setBrightness(BRIGHT_NESS);
-
-    lv_init();
-    lv_disp_buf_init(&disp_buf, buf, NULL, LV_HOR_RES_MAX * 10); // 初始化显示缓冲区
-
-    lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = LV_HOR_RES_MAX; // 使用宏
-    disp_drv.ver_res = LV_VER_RES_MAX; // 使用宏
-    disp_drv.flush_cb = my_disp_flush;
-    disp_drv.buffer = &disp_buf;
-    lv_disp_drv_register(&disp_drv);
-
-    initStyles(); // 在创建UI元素前初始化所有样式
-    setupPages(); // 设置登录和监控页面
-
-    // 构建monitor_page的UI元素
-    // 背景
-    lv_obj_t *bg = lv_obj_create(monitor_page, NULL);
-    lv_obj_clean_style_list(bg, LV_OBJ_PART_MAIN);
-    lv_obj_set_style_local_bg_opa(bg, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_OPA_100);
-    lv_color_t bg_color = lv_color_hex(0x7381a2); // 保持原有颜色
-    lv_obj_set_style_local_bg_color(bg, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, bg_color);
-    lv_obj_set_size(bg, LV_HOR_RES_MAX, LV_VER_RES_MAX);
-    lv_obj_set_pos(bg, 0, 0); // 确保从(0,0)开始
-
-    lv_obj_t *cont = lv_cont_create(monitor_page, NULL);
-    lv_obj_set_auto_realign(cont, true);
-    lv_color_t cont_color = lv_color_hex(0x081418);
-    lv_obj_set_width(cont, 230);
-    lv_obj_set_height(cont, 210);
-    lv_obj_set_pos(cont, 5, 5);
-    lv_cont_set_fit(cont, LV_FIT_TIGHT);
-    lv_cont_set_layout(cont, LV_LAYOUT_COLUMN_MID);
-    lv_obj_set_style_local_border_color(cont, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, cont_color);
-    lv_obj_set_style_local_bg_color(cont, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, cont_color);
-
-    // 顶部标签
-    top_label_1 = lv_obj_default(15, 12, "...");
-    top_label_2 = lv_obj_default(142, 12, "...");
-
-    top_icon_2 = lv_label_create(monitor_page, NULL);
-    lv_obj_add_style(top_icon_2, LV_LABEL_PART_MAIN, &iconfont_style); // 使用预定义样式
-    lv_label_set_text(top_icon_2, CUSTOM_SYMBOL_UPLOAD); // 默认图标
-    lv_obj_set_pos(top_icon_2, 120, 15);
-
-    // 图中
-    chart_label_top_left = lv_obj_default(15, 40, "");
-    chart_label_top_right = lv_obj_default(180, 40, "");
-    chart_label_bottom_left = lv_obj_default(15, 190, "");
-    chart_label_bottom_right = lv_obj_default(170, 190, "");
-
-    lv_obj_set_style_local_text_color(chart_label_top_left, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
-    lv_obj_set_style_local_text_color(chart_label_top_right, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
-    lv_obj_set_style_local_text_color(chart_label_bottom_left, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
-    lv_obj_set_style_local_text_color(chart_label_bottom_right, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
-
-    // 底部
-    bottom_label_1 = lv_obj_default(10, 220, "");
-    bottom_label_2 = lv_obj_default(140, 220, "");
-    bottom_label_3 = lv_obj_default(190, 220, "");
-
-    // 绘制曲线图
-    chart = lv_chart_create(monitor_page, NULL);
-    lv_obj_set_size(chart, 220, 175);
-    lv_obj_align(chart, NULL, LV_ALIGN_CENTER, 0, 2);
-    lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
-    lv_chart_set_update_mode(chart, LV_CHART_UPDATE_MODE_SHIFT);
-
-    lv_obj_set_style_local_bg_opa(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, LV_OPA_50);
-    lv_obj_set_style_local_bg_grad_dir(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, LV_GRAD_DIR_VER);
-    lv_obj_set_style_local_bg_main_stop(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, 255);
-    lv_obj_set_style_local_bg_grad_stop(chart, LV_CHART_PART_SERIES, LV_STATE_DEFAULT, 0);
-
-    chart_series = lv_chart_add_series(chart, LV_COLOR_RED);
-
-    lv_chart_refresh(chart);
-
-    task_cb(NULL);
-
-    t = lv_task_create(task_cb, refresh_time, LV_TASK_PRIO_MID, 0);
-
-    // 氛围灯
-    strip.begin();
-    strip.setBrightness(255);
-    strip.show();
-    randomSeed(analogRead(A0));
-}
-
-void button_handler()
-{
+void button_handler() {
     bool currentState = digitalRead(BUTTON_PIN);
     // 检测按键状态变化（下降沿）
     if (lastButtonState == HIGH && currentState == LOW) {
@@ -609,8 +567,34 @@ void button_handler()
     lastButtonState = currentState;
 }
 
-void loop()
-{
+void setup() {
+    Serial.begin(500000); // 提高波特率
+    // srand((unsigned)time(NULL)); // ESP8266的time(NULL)可能需要ntp同步，或者用randomSeed(analogRead(A0))
+    // 按钮使用内部上拉
+    pinMode(BUTTON_PIN, INPUT_PULLUP);   
+
+    tft.begin();
+    tft.setRotation(0);
+    setBrightness(BRIGHT_NESS);
+
+    initStyles(); // 在创建UI元素前初始化所有样式
+    setupPages(); // 设置登录和监控页面
+    connectWiFi(); // 连接WiFi
+
+    t = lv_task_create(task_cb, refresh_time, LV_TASK_PRIO_MID, 0);
+
+    // 氛围灯
+    strip.begin();
+    strip.setBrightness(255);
+    strip.show();
+    randomSeed(analogRead(A0));
+}
+
+void loop() {
     lv_task_handler();
     button_handler();
+    if (needToRunTask) {
+        needToRunTask = false;
+        checkWiFiStatus();
+    }
 }
