@@ -18,11 +18,13 @@ const char *url = "/getChartInfo";
 uint8 stockIndex = 0;
 // 屏幕亮度
 #define BRIGHT_NESS 30  // 1-100
-// 刷新间隔（毫秒）
+// 刷新间隔(毫秒)
 const int refresh_time = 20000;
 // 按钮
 #define BUTTON_PIN  4
 bool lastButtonState = HIGH;
+// 蜂鸣器
+#define BEEP_PIN  16
 // 氛围灯
 #define LED_PIN     12   // GPIO12
 Adafruit_NeoPixel strip(1, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -58,7 +60,7 @@ static lv_task_t *t; // 自动刷新任务
 
 static lv_chart_series_t *chart_series;
 
-// LVGL样式（提前初始化并重用以节省内存和提高效率）
+// LVGL样式(提前初始化并重用以节省内存和提高效率)
 static lv_style_t iconfont_style;
 static lv_style_t font_style;
 static lv_style_t hline_style;
@@ -340,6 +342,7 @@ bool getChartInfo(ChartData &data) {
     // JSON数据有效性检查及提取
     JsonObject chart_info = doc["chart_info"];
     JsonArray chart_array = doc["chart_array"];
+    JsonObject beep_info = doc["beep_info"];
 
     if (chart_info.isNull()) {
         Serial.println("Error: 'chart_info' is missing or invalid in JSON response.");
@@ -382,6 +385,16 @@ bool getChartInfo(ChartData &data) {
         }
     }
     client.stop();
+
+    if (!beep_info.isNull()) {
+
+        uint8 beepCount = beep_info["beepCount"] | 1;     // 默认 1 次
+        uint16 pauseTime = beep_info["pauseTime"] | 0;    // 默认 0 ms
+        uint16 beepFreq = beep_info["beepFreq"] | 2500;   // 默认 2500 Hz
+        uint16 beepTime = beep_info["beepTime"] | 100;    // 默认 100 ms
+
+        playBeepPattern(beepCount, pauseTime, beepFreq, beepTime);
+    }
     return true;
 }
 
@@ -543,9 +556,9 @@ static void task_cb(lv_task_t *task) {
 
 void setRandomColor(int theme) {
     // 1:绿 2:红
-    uint8_t r = random(0, 256);
-    uint8_t g = random(0, 256);
-    uint8_t b = random(0, 256);
+    uint8 r = random(0, 256);
+    uint8 g = random(0, 256);
+    uint8 b = random(0, 256);
     if(theme == 1){
         g = 255;
     } else if (theme == 2) {
@@ -555,14 +568,29 @@ void setRandomColor(int theme) {
     strip.show();
 }
 
+void beepOnce(uint16 beepFreq, uint16 beepTime) {
+  tone(BEEP_PIN, beepFreq);   // 发声
+  delay(beepTime);
+  noTone(BEEP_PIN);           // 停止
+}
+
+// 蜂鸣器 提示音次数, 间隔(毫秒), 频率(Hz), 持续时间(毫秒)
+void playBeepPattern(uint8 beepCount, uint16 pauseTime, uint16 beepFreq, uint16 beepTime) {
+  for (uint8 i = 0; i < beepCount; i++) {
+    beepOnce(beepFreq, beepTime);
+    delay(pauseTime);
+  }
+}
+
 void button_handler() {
     bool currentState = digitalRead(BUTTON_PIN);
-    // 检测按键状态变化（下降沿）
+    // 检测按键状态变化(下降沿)
     if (lastButtonState == HIGH && currentState == LOW) {
         Serial.println("Button pressed!");
-        lv_task_reset(t); // 清空倒计时
-        task_cb(NULL);    // 立刻执行刷新
-        delay(100);       // 防抖
+        delay(100);          // 防抖
+        beepOnce(2000, 100); // 声音
+        lv_task_reset(t);    // 清空倒计时
+        task_cb(NULL);       // 立刻执行刷新
     }
     lastButtonState = currentState;
 }
@@ -571,7 +599,8 @@ void setup() {
     Serial.begin(500000); // 提高波特率
     // srand((unsigned)time(NULL)); // ESP8266的time(NULL)可能需要ntp同步，或者用randomSeed(analogRead(A0))
     // 按钮使用内部上拉
-    pinMode(BUTTON_PIN, INPUT_PULLUP);   
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    pinMode(BEEP_PIN, OUTPUT);
 
     tft.begin();
     tft.setRotation(0);
